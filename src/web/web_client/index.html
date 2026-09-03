@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>rtstream — 实时视频传输监控</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="topbar">
+  <span class="logo">rtstream</span>
+  <span class="sub">实时视频采集 · H.264 编码 · 多协议传输 · 监控面板</span>
+  <span id="conn-badge" class="badge off">未连接</span>
+</header>
+
+<main id="layout">
+  <section id="video-pane">
+    <div class="pane-title">视频预览 <span class="hint">（服务端解码画面经 WebSocket/JPEG 下发）</span></div>
+    <canvas id="video" width="1280" height="720"></canvas>
+    <div class="fallback-row">
+      <a id="mjpeg-link" href="/stream.mjpeg" target="_blank">MJPEG 备用通道</a>
+      <span id="frame-info">frame: -</span>
+    </div>
+  </section>
+
+  <aside id="panel-pane">
+    <div class="pane-title">运行指标</div>
+
+    <div class="group">
+      <div class="group-title">采集 / 编码（服务端）</div>
+      <div class="row"><span>采集帧数</span><b id="m-capture_frames">0</b></div>
+      <div class="row"><span>编码帧数</span><b id="m-encoded_frames">0</b></div>
+      <div class="row"><span>编码码率</span><b id="m-send_bitrate">0 kbps</b></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">网络（发送端）</div>
+      <div class="row"><span>发送包数</span><b id="m-net_packets_sent">0</b></div>
+      <div class="row"><span>发送字节</span><b id="m-net_bytes_sent">0</b></div>
+      <div class="row"><span>FEC 包数</span><b id="m-net_fec_sent">0</b></div>
+      <div class="row"><span>模拟丢包</span><b id="m-sim_dropped">0</b></div>
+      <div class="row"><span>NACK 请求</span><b id="m-nack_received">0</b></div>
+      <div class="row"><span>重传包数</span><b id="m-retransmit_sent">0</b></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">弱网恢复 / 接收</div>
+      <div class="row"><span>接收包数</span><b id="m-net_packets_recv">0</b></div>
+      <div class="row"><span>判定丢失</span><b id="m-net_lost">0</b></div>
+      <div class="row"><span>FEC 恢复</span><b id="m-fec_recovered" class="good">0</b></div>
+      <div class="row"><span>NACK 命中</span><b id="m-nack_hit" class="good">0</b></div>
+      <div class="row"><span>RTT</span><b id="m-rtt">- ms</b></div>
+      <div class="row"><span>Jitter</span><b id="m-jitter">- ms</b></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">端到端延时（回环）</div>
+      <div class="row"><span>P50</span><b id="m-lat_p50">- ms</b></div>
+      <div class="row"><span>P95</span><b id="m-lat_p95">- ms</b></div>
+      <div class="row"><span>Max</span><b id="m-lat_max">- ms</b></div>
+      <div class="row"><span>客户端 FPS</span><b id="m-local_fps">0</b></div>
+      <div class="row"><span>WS RTT</span><b id="m-ws_rtt">- ms</b></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">延时曲线（最近 300 帧）</div>
+      <canvas id="latency-chart" width="340" height="110"></canvas>
+    </div>
+
+    <div class="group">
+      <div class="group-title">帧率</div>
+      <canvas id="fps-chart" width="340" height="70"></canvas>
+    </div>
+  </aside>
+</main>
+
+<script src="dashboard.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# rtstream 代码风格（clang-format 18+）
+# 与现有代码保持一致：4 空格缩进、100 列、指针右贴
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+PointerAlignment: Right
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Attach
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+AccessModifierOffset: -4
+AlignTrailingComments: true

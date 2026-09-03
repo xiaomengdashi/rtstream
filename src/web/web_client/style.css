@@ -1,0 +1,124 @@
+/* rtstream web 面板 —— ImGui 风格暗色主题 */
+
+:root {
+  --bg: #101216;
+  --panel: #191c22;
+  --panel-2: #1f232b;
+  --border: #2b313c;
+  --text: #d8dee9;
+  --dim: #8a94a6;
+  --accent: #4fa3ff;
+  --good: #67d17c;
+  --warn: #ffcc66;
+  --bad: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+#topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+#topbar .logo { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+#topbar .sub { color: var(--dim); font-size: 12px; }
+
+.badge {
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+.badge.on  { color: var(--good); border-color: var(--good); }
+.badge.off { color: var(--bad); border-color: var(--bad); }
+
+#layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 12px;
+  padding: 12px;
+  align-items: start;
+}
+
+.pane-title {
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  font-weight: 700;
+  color: var(--accent);
+}
+.pane-title .hint { color: var(--dim); font-weight: 400; font-size: 12px; }
+
+#video-pane canvas#video {
+  display: block;
+  width: 100%;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+.fallback-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.fallback-row a { color: var(--accent); text-decoration: none; }
+
+#panel-pane .group {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  padding: 8px 10px 10px;
+  margin-bottom: 12px;
+}
+#panel-pane .group-title {
+  margin: -8px -10px 8px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+#panel-pane .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+#panel-pane .row span { color: var(--dim); }
+#panel-pane .row b { font-weight: 600; }
+#panel-pane .good { color: var(--good); }
+#panel-pane .warn { color: var(--warn); }
+#panel-pane .bad  { color: var(--bad); }
+
+#latency-chart, #fps-chart {
+  display: block;
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+@media (max-width: 1000px) {
+  #layout { grid-template-columns: 1fr; }
+}

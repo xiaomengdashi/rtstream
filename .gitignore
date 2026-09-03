@@ -1,0 +1,39 @@
+# 构建目录(CMake 产物,含 FetchContent 拉取的 imgui)
+build/
+build-*/
+_deps/
+
+# 编译中间文件 / 二进制
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+rtstream_server
+rtstream_client
+
+# CMake(防源内构建污染)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CMakeUserPresets.json
+
+# macOS
+.DS_Store
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.xcodeproj
+*.xcworkspace
+*.swp
+*~
+
+# 日志
+*.log
+
+# ImGui 布局持久化（已禁用，防意外生成）
+imgui.ini
