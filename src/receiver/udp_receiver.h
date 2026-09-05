@@ -102,6 +102,14 @@ private:
 
             if (UdpHeader::magic_ok(buf)) {
                 UdpHeader h = UdpHeader::read(buf);
+                if (h.payload_type == static_cast<uint8_t>(PayloadType::StatsJson)) {
+                    size_t plen = static_cast<size_t>(n) - UdpHeader::kSize;
+                    if (h.payload_len > 0 && h.payload_len < plen) plen = h.payload_len;
+                    Metrics::instance().update_remote_from_json(
+                        std::string(reinterpret_cast<const char*>(buf) + UdpHeader::kSize,
+                                    plen));
+                    continue;
+                }
                 if (h.payload_type == static_cast<uint8_t>(PayloadType::StatsPong)) {
                     if (n - UdpHeader::kSize >= 8) {
                         int64_t sent;
@@ -236,9 +244,14 @@ private:
     }
 
     void ping_loop() {
+        // 20ms 小片轮询：保持 500ms 心跳周期，同时 stop() 时 join 至多等 20ms
+        int64_t next_send = now_us();
         while (running_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if (running_) send_ping();
+            if (now_us() >= next_send) {
+                send_ping();
+                next_send += 500000;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     }
 

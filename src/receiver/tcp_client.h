@@ -81,6 +81,14 @@ private:
             if (!read_all(fd_, buf.data(), total)) break;
 
             if (!TcpWire::magic_ok(buf.data())) continue;
+            Metrics::instance().net_packets_recv++;
+            Metrics::instance().net_bytes_recv += total + 4;
+            if (buf[4] & 0x2) {   // 服务端指标 JSON 帧
+                Metrics::instance().update_remote_from_json(
+                    std::string(buf.begin() + static_cast<long>(TcpWire::kHeaderSize),
+                                buf.end()));
+                continue;
+            }
             auto ef = std::make_shared<EncodedFrame>();
             ef->keyframe = buf[4] & 1;
             uint32_t fid;
@@ -91,8 +99,6 @@ private:
             ef->data.assign(buf.begin() + static_cast<long>(TcpWire::kHeaderSize), buf.end());
             ef->encode_done_us = now_us();
 
-            Metrics::instance().net_packets_recv++;
-            Metrics::instance().net_bytes_recv += total + 4;
             if (!out.push(ef)) break;
         }
         if (running_) RTS_LOGW("tcp-rx", "server disconnected");

@@ -77,6 +77,7 @@ enum class PayloadType : uint8_t {
     Nack = 2,   // 重传请求（接收端→发送端）
     StatsPing = 3, // RTT 测量（客户端→服务端回显）
     StatsPong = 4,
+    StatsJson = 5, // 服务端指标 JSON（服务端→客户端，每秒一个控制包）
 };
 
 // 传输链路

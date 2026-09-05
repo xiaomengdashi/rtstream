@@ -12,7 +12,12 @@
 #include <sstream>
 #include <vector>
 
+#include "common/timer.h"
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <nlohmann/json.hpp>
+#pragma clang diagnostic pop
 
 namespace rtstream {
 
@@ -88,6 +93,38 @@ public:
         }();
         s.max = *std::max_element(v.begin(), v.end());
         return s;
+    }
+
+    // ---- 远端服务端指标（服务端经控制包每秒同步，仅客户端进程填充）----
+    struct RemoteMetrics {
+        std::atomic<uint64_t> capture_frames{0};
+        std::atomic<uint64_t> encoded_frames{0};
+        std::atomic<uint64_t> net_packets_sent{0};
+        std::atomic<uint64_t> net_bytes_sent{0};
+        std::atomic<uint64_t> net_fec_sent{0};
+        std::atomic<uint64_t> sim_dropped{0};
+        std::atomic<uint64_t> nack_received{0};
+        std::atomic<uint64_t> retransmit_sent{0};
+        std::atomic<int64_t> last_sync_us{0};
+    };
+    RemoteMetrics remote;
+
+    // 解析服务端下发的指标 JSON（损坏的包直接丢弃，下一秒重新同步）
+    void update_remote_from_json(const std::string& payload) {
+        try {
+            auto j = nlohmann::json::parse(payload);
+            if (!j.is_object()) return;
+            remote.capture_frames   = j.value("capture_frames",   uint64_t{0});
+            remote.encoded_frames   = j.value("encoded_frames",   uint64_t{0});
+            remote.net_packets_sent = j.value("net_packets_sent", uint64_t{0});
+            remote.net_bytes_sent   = j.value("net_bytes_sent",   uint64_t{0});
+            remote.net_fec_sent     = j.value("net_fec_sent",     uint64_t{0});
+            remote.sim_dropped      = j.value("sim_dropped",      uint64_t{0});
+            remote.nack_received    = j.value("nack_received",    uint64_t{0});
+            remote.retransmit_sent  = j.value("retransmit_sent",  uint64_t{0});
+            remote.last_sync_us     = now_us();
+        } catch (...) {
+        }
     }
 
     std::string to_json() const {

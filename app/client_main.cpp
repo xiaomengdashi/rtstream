@@ -199,13 +199,16 @@ int main(int argc, char** argv) {
             auto lat = m.latency();
             RTS_LOGI("client",
                      "decoded=%llu e2e p50=%.1f p95=%.1f ms | recv=%llu lost=%llu "
-                     "fec=%llu rtt=%.1f jitter=%.1f",
+                     "fec=%llu rtt=%.1f jitter=%.1f | srv captured=%llu encoded=%llu sent=%llu",
                      (unsigned long long)m.decoded_frames.load(),
                      lat.p50, lat.p95,
                      (unsigned long long)m.net_packets_recv.load(),
                      (unsigned long long)m.net_lost.load(),
                      (unsigned long long)m.fec_recovered.load(),
-                     m.rtt_ms.load(), m.jitter_ms.load());
+                     m.rtt_ms.load(), m.jitter_ms.load(),
+                     (unsigned long long)m.remote.capture_frames.load(),
+                     (unsigned long long)m.remote.encoded_frames.load(),
+                     (unsigned long long)m.remote.net_packets_sent.load());
         }
     }
 

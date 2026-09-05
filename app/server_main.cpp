@@ -3,6 +3,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <poll.h>
+#include <unistd.h>
 #include <csignal>
 #include <memory>
 #include <string>
@@ -29,8 +31,16 @@ using namespace rtstream;
 namespace {
 
 std::atomic<bool> g_stop{false};
+int g_wake_pipe[2] = {-1, -1};   // 自管道：信号处理器只 write（异步信号安全），主循环 poll 即刻唤醒
 
-void on_signal(int) { g_stop = true; }
+void on_signal(int) {
+    g_stop = true;
+    if (g_wake_pipe[1] >= 0) {
+        char ch = 1;
+        ssize_t r = ::write(g_wake_pipe[1], &ch, 1);
+        (void)r;
+    }
+}
 
 struct Args {
     std::string source = "auto";       // auto | test | v4l2 | avf
@@ -95,6 +105,7 @@ Args parse_args(int argc, char** argv) {
 int main(int argc, char** argv) {
     Args args = parse_args(argc, argv);
     log_level() = LogLevel::Info;
+    if (::pipe(g_wake_pipe) < 0) g_wake_pipe[0] = g_wake_pipe[1] = -1;
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
     std::signal(SIGPIPE, SIG_IGN);
@@ -196,35 +207,38 @@ int main(int argc, char** argv) {
     });
 
     // ---- 内置回环接收器：走完整"接收→FEC/NACK→JB→解码"路径，填充恢复端指标 ----
-    std::thread monitor_thread;
+    // 接收器提升到 main 作用域：关停时主动 stop() 关闭输出队列，监控线程即刻退出
+    UdpReceiver mon_udp;
+    RtpReceiver mon_rtp;
+    TcpClient mon_tcp;
+    ThreadSafeQueue<EncodedFramePtr>* monitor_in = nullptr;
     if (args.loopback_monitor) {
-        auto monitor_body = [ttype, &args]() {
-            std::string err;
-            std::string server = "127.0.0.1";
-            UdpReceiver udp_rx;
-            RtpReceiver rtp_rx;
-            TcpClient tcp_rx;
-            bool ok = false;
-            if (ttype == TransportType::UDP) ok = udp_rx.start(server, args.port_udp, err);
-            else if (ttype == TransportType::RTP) ok = rtp_rx.start(server, args.port_rtp, err);
-            else ok = tcp_rx.start(server, args.port_tcp, err);
-            if (!ok) {
-                RTS_LOGW("monitor", "loopback receiver failed: %s", err.c_str());
-                return;
-            }
+        std::string err;
+        bool ok = false;
+        if (ttype == TransportType::UDP) ok = mon_udp.start("127.0.0.1", args.port_udp, err);
+        else if (ttype == TransportType::RTP) ok = mon_rtp.start("127.0.0.1", args.port_rtp, err);
+        else ok = mon_tcp.start("127.0.0.1", args.port_tcp, err);
+        if (!ok) {
+            RTS_LOGW("monitor", "loopback receiver failed: %s", err.c_str());
+        } else {
+            monitor_in = ttype == TransportType::UDP ? &mon_udp.out :
+                         ttype == TransportType::RTP ? &mon_rtp.out : &mon_tcp.out;
+        }
+    }
+    std::thread monitor_thread;
+    if (monitor_in) {
+        monitor_thread = std::thread([&] {
             FFmpegDecoder dec;
-            if (!dec.open(err)) {
-                RTS_LOGW("monitor", "loopback decoder failed: %s", err.c_str());
+            std::string derr;
+            if (!dec.open(derr)) {
+                RTS_LOGW("monitor", "loopback decoder failed: %s", derr.c_str());
                 return;
             }
             Metrics& m = Metrics::instance();
-            ThreadSafeQueue<EncodedFramePtr>* in =
-                ttype == TransportType::UDP ? &udp_rx.out :
-                ttype == TransportType::RTP ? &rtp_rx.out : &tcp_rx.out;
             EncodedFramePtr ef;
             while (!g_stop) {
-                if (!in->pop_for(ef, std::chrono::milliseconds(200))) {
-                    if (in->closed()) break;
+                if (!monitor_in->pop_for(ef, std::chrono::milliseconds(100))) {
+                    if (monitor_in->closed()) break;
                     continue;
                 }
                 FramePtr f;
@@ -235,8 +249,7 @@ int main(int argc, char** argv) {
                     m.add_e2e_ms((now_us() - ef->capture_us) / 1000.0);
                 }
             }
-        };
-        monitor_thread = std::thread(monitor_body);
+        });
         RTS_LOGI("server", "loopback monitor enabled (fec/nack/jitter/e2e metrics)");
     }
 
@@ -246,14 +259,22 @@ int main(int argc, char** argv) {
     RTS_LOGI("server", "web dashboard: http://127.0.0.1:%u/  (ws://127.0.0.1:%u/ws)",
              args.port_web, args.port_web);
 
-    while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // 主循环：poll 自管道读端——信号到来即刻唤醒，平时零轮询开销
+    while (!g_stop) {
+        struct pollfd pfd{g_wake_pipe[0], POLLIN, 0};
+        int r = ::poll(&pfd, 1, 500);
+        if (r > 0 && (pfd.revents & POLLIN)) break;   // 信号处理器写入了唤醒字节
+    }
 
     RTS_LOGI("server", "shutting down...");
     g_stop = true;
     enc_q.close();
     tap_q.close();
-    // 唤醒回环接收器（接收队列在 receiver.stop() 中关闭）
-    monitor_thread.join();
+    // 先关监控接收器（关闭输出队列 → 监控线程 pop 立即返回 false 退出）
+    if (ttype == TransportType::UDP) mon_udp.stop();
+    else if (ttype == TransportType::RTP) mon_rtp.stop();
+    else mon_tcp.stop();
+    if (monitor_thread.joinable()) monitor_thread.join();
     encode_thread.join();
     capture->stop();
     previewer.stop();

@@ -5,6 +5,7 @@
 // TCP 自带可靠性，无需 FEC/NACK。
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -35,6 +36,7 @@ public:
         if (::listen(listen_fd_, 4) < 0) { error = "listen: " + errno_str(); return false; }
         running_ = true;
         accept_thread_ = std::thread([this] { accept_loop(); });
+        stats_thread_ = std::thread([this] { stats_loop(); });
         RTS_LOGI("tcp", "listening on %u", cfg_.tcp_port);
         return true;
     }
@@ -51,6 +53,7 @@ public:
         }
         cv_clients_.notify_all();
         if (accept_thread_.joinable()) accept_thread_.join();
+        if (stats_thread_.joinable()) stats_thread_.join();
         // join 所有发送线程
         std::vector<std::thread*> to_join;
         {
@@ -82,6 +85,7 @@ private:
         ThreadSafeQueue<EncodedFramePtr> queue{16};
         std::thread thread;
         std::atomic<bool> alive{true};
+        std::mutex send_mtx;   // send_loop 与 stats_loop 共写同一 fd
     };
 
     void accept_loop() {
@@ -113,6 +117,7 @@ private:
             std::memcpy(pkt.data() + kHeaderLen, frame->data.data(), frame->data.size());
             uint32_t total = htonl(static_cast<uint32_t>(pkt.size()));
             // 发送：4B 长度 + 头 + 数据；失败即断开
+            std::lock_guard<std::mutex> lk(c->send_mtx);
             if (!send_all(c->fd, &total, 4) ||
                 !send_all(c->fd, pkt.data(), pkt.size())) {
                 RTS_LOGW("tcp", "client fd=%d disconnected", c->fd);
@@ -123,6 +128,38 @@ private:
         }
         c->alive = false;
         close_fd(c->fd);
+    }
+
+    // 每秒下发服务端指标：flags bit1=1 标记 stats 帧，载荷为 JSON
+    void stats_loop() {
+        while (running_) {
+            {
+                std::unique_lock<std::mutex> lk(mtx_);
+                cv_clients_.wait_for(lk, std::chrono::milliseconds(1000), [this] { return !running_; });
+            }
+            if (!running_) break;
+            std::string payload = Metrics::instance().to_json();
+            std::vector<uint8_t> pkt(kHeaderLen + payload.size());
+            TcpWire::write_header(pkt.data(), 0, now_us(), /*stats*/ true);
+            std::memcpy(pkt.data() + kHeaderLen, payload.data(), payload.size());
+            uint32_t total = htonl(static_cast<uint32_t>(pkt.size()));
+
+            std::vector<std::shared_ptr<Client>> clients_snapshot;
+            {
+                std::lock_guard<std::mutex> lk(mtx_);
+                clients_snapshot = clients_;
+            }
+            for (auto& c : clients_snapshot) {
+                if (!c->alive.load(std::memory_order_relaxed)) continue;
+                std::lock_guard<std::mutex> clk(c->send_mtx);
+                if (!c->alive.load(std::memory_order_relaxed)) continue;
+                if (!send_all(c->fd, &total, 4) || !send_all(c->fd, pkt.data(), pkt.size())) {
+                    c->alive = false;
+                    c->queue.close();
+                    close_fd(c->fd);
+                }
+            }
+        }
     }
 
     static bool send_all(int fd, const void* data, size_t len) {
@@ -141,7 +178,11 @@ private:
 
     size_t client_count() const {
         std::lock_guard<std::mutex> lk(mtx_);
-        return clients_.size();
+        size_t count = 0;
+        for (const auto& c : clients_) {
+            if (c->alive) count++;
+        }
+        return count;
     }
 
     static constexpr size_t kHeaderLen = TcpWire::kHeaderSize;
@@ -150,6 +191,7 @@ private:
     int listen_fd_ = -1;
     std::atomic<bool> running_{false};
     std::thread accept_thread_;
+    std::thread stats_thread_;
     mutable std::mutex mtx_;
     std::condition_variable cv_clients_;
     std::vector<std::shared_ptr<Client>> clients_;

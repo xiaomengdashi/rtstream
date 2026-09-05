@@ -93,10 +93,13 @@ public:
         ImGui::Text("链路: %s   JitterBuffer 目标: %.0f ms", link, jb_target_ms);
         ImGui::Separator();
 
-        if (ImGui::CollapsingHeader("采集 / 编码", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("采集帧: %llu   编码帧: %llu",
-                        (unsigned long long)m.capture_frames.load(),
-                        (unsigned long long)m.encoded_frames.load());
+        if (ImGui::CollapsingHeader("采集 / 编码（服务端同步）", ImGuiTreeNodeFlags_DefaultOpen)) {
+            int64_t sync_us = m.remote.last_sync_us.load();
+            bool synced = (sync_us > 0 && (now_us() - sync_us) < 3000000);
+            ImGui::Text("状态: %s   采集帧: %llu   编码帧: %llu",
+                        synced ? "同步中" : "等待数据/离线",
+                        (unsigned long long)m.remote.capture_frames.load(),
+                        (unsigned long long)m.remote.encoded_frames.load());
         }
         if (ImGui::CollapsingHeader("解码 / 渲染", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("解码: %llu   渲染: %llu   队列丢帧: %llu",
@@ -110,17 +113,20 @@ public:
             else
                 ImGui::Text("E2E  （等待数据，回环链路有效）");
         }
-        if (ImGui::CollapsingHeader("网络", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("网络 · 发送（服务端同步）", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("发送包: %llu (FEC %llu, 重传 %llu)",
-                        (unsigned long long)m.net_packets_sent.load(),
-                        (unsigned long long)m.net_fec_sent.load(),
-                        (unsigned long long)m.retransmit_sent.load());
-            ImGui::Text("接收包: %llu   丢失: %llu",
+                        (unsigned long long)m.remote.net_packets_sent.load(),
+                        (unsigned long long)m.remote.net_fec_sent.load(),
+                        (unsigned long long)m.remote.retransmit_sent.load());
+            ImGui::Text("发送字节: %llu   模拟丢包: %llu",
+                        (unsigned long long)m.remote.net_bytes_sent.load(),
+                        (unsigned long long)m.remote.sim_dropped.load());
+            ImGui::Text("NACK 请求收到: %llu", (unsigned long long)m.remote.nack_received.load());
+        }
+        if (ImGui::CollapsingHeader("网络 · 接收（本机）", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("接收包: %llu   判定丢失: %llu",
                         (unsigned long long)m.net_packets_recv.load(),
                         (unsigned long long)m.net_lost.load());
-            ImGui::Text("模拟丢包: %llu   NACK 收到: %llu",
-                        (unsigned long long)m.sim_dropped.load(),
-                        (unsigned long long)m.nack_received.load());
             ImGui::Text("FEC 恢复: %llu   NACK 命中: %llu",
                         (unsigned long long)m.fec_recovered.load(),
                         (unsigned long long)m.nack_hit.load());

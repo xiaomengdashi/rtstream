@@ -38,7 +38,7 @@ public:
 
 // TCP 帧协议头（20 字节，大端）：
 //  [0..3]  magic "RTV1" (0x52 0x54 0x56 0x31)
-//  [4]     flags (bit0 keyframe)
+//  [4]     flags (bit0 keyframe; bit1 载荷为服务端指标 JSON)
 //  [5..7]  reserved
 //  [8..11] frame_id
 //  [12..19] capture_us (int64)
@@ -53,6 +53,16 @@ struct TcpWire {
         uint32_t fid = htonl(static_cast<uint32_t>(f.frame_id));
         std::memcpy(buf + 8, &fid, 4);
         store_be64(buf + 12, static_cast<uint64_t>(f.capture_us));
+    }
+
+    // 控制/指标帧变体：flags bit1=1 标记服务端指标 JSON 载荷（frame_id 填 0 或序列号）
+    static void write_header(uint8_t* buf, uint32_t frame_id, int64_t capture_us, bool stats) {
+        std::memcpy(buf, kMagic, 4);
+        buf[4] = stats ? 0x2 : 0;
+        buf[5] = buf[6] = buf[7] = 0;
+        uint32_t fid = htonl(frame_id);
+        std::memcpy(buf + 8, &fid, 4);
+        store_be64(buf + 12, static_cast<uint64_t>(capture_us));
     }
 
     static bool magic_ok(const uint8_t* buf) {

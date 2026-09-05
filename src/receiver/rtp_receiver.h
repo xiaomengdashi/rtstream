@@ -111,9 +111,11 @@ private:
                 p.capture_ms = extend_ts90(p.ts) / 90;
                 jb_.push(p.seq, p.capture_ms * 1000, std::make_shared<RtpPkt>(std::move(p)));
             } else if (UdpHeader::magic_ok(buf)) {
+                if (static_cast<size_t>(n) < UdpHeader::kSize) continue;
                 UdpHeader h = UdpHeader::read(buf);
                 const uint8_t* payload = buf + UdpHeader::kSize;
                 size_t plen = static_cast<size_t>(n) - UdpHeader::kSize;
+                if (h.payload_len > 0 && h.payload_len < plen) plen = h.payload_len;
                 switch (h.payload_type) {
                     case static_cast<uint8_t>(PayloadType::StatsPong): {
                         if (plen >= 8) {
@@ -125,6 +127,11 @@ private:
                             Metrics::instance().rtt_ms = r;
                             jb_.set_rtt_ms(r);
                         }
+                        break;
+                    }
+                    case static_cast<uint8_t>(PayloadType::StatsJson): {
+                        Metrics::instance().update_remote_from_json(
+                            std::string(reinterpret_cast<const char*>(payload), plen));
                         break;
                     }
                     case static_cast<uint8_t>(PayloadType::Fec): {
@@ -364,9 +371,14 @@ private:
     }
 
     void ping_loop() {
+        // 20ms 小片轮询：保持 500ms 心跳周期，同时 stop() 时 join 至多等 20ms
+        int64_t next_send = now_us();
         while (running_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if (running_) send_ping();
+            if (now_us() >= next_send) {
+                send_ping();
+                next_send += 500000;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     }
 

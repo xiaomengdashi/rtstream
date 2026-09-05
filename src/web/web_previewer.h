@@ -6,6 +6,7 @@
 // wall_ms 为服务端墙钟毫秒（同机回环时浏览器 Date.now() 可与之对照测 E2E 延时）。
 
 #include <atomic>
+#include <condition_variable>
 #include <thread>
 
 #include "common/logger.h"
@@ -54,6 +55,7 @@ public:
 
     void stop() {
         running_ = false;
+        cv_stats_.notify_all();
         if (thread_.joinable()) thread_.join();
         if (stats_thread_.joinable()) stats_thread_.join();
     }
@@ -63,7 +65,7 @@ private:
         FramePtr f;
         std::vector<uint8_t> jpeg;
         while (running_) {
-            if (!tap_->pop_for(f, std::chrono::milliseconds(200))) continue;
+            if (!tap_->pop_for(f, std::chrono::milliseconds(50))) continue;
             if (!enc_.encode(*f, jpeg)) continue;
 
             // 共享槽（MJPEG）
@@ -97,8 +99,11 @@ private:
 
     void stats_loop() {
         while (running_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-            if (ws_) ws_->broadcast_text(Metrics::instance().to_json());
+            {
+                std::unique_lock<std::mutex> lk(stats_mtx_);
+                cv_stats_.wait_for(lk, std::chrono::milliseconds(1000), [this] { return !running_; });
+            }
+            if (running_ && ws_) ws_->broadcast_text(Metrics::instance().to_json());
         }
     }
 
@@ -114,6 +119,8 @@ private:
     ThreadSafeQueue<FramePtr>* tap_ = nullptr;
     JpegEncoder enc_;
     std::atomic<bool> running_{false};
+    std::mutex stats_mtx_;
+    std::condition_variable cv_stats_;
     std::thread thread_, stats_thread_;
 };
 

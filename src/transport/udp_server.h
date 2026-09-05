@@ -6,6 +6,8 @@
 // 接收路径：NACK → NackManager 重传缓存；StatsPing → 注册客户端 + 回 Pong（RTT）。
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -47,6 +49,7 @@ public:
         sim_.start();
         running_ = true;
         recv_thread_ = std::thread([this] { recv_loop(); });
+        stats_thread_ = std::thread([this] { stats_loop(); });
         RTS_LOGI("udp", "listening on %u (mtu=%zu fecK=%u loss=%.2f delay=%ums jitter=%ums)",
                  cfg_.udp_port, cfg_.udp_mtu, cfg_.fec_group_k,
                  cfg_.loss_rate, cfg_.delay_ms, cfg_.jitter_ms);
@@ -55,9 +58,11 @@ public:
 
     void stop() override {
         running_ = false;
+        cv_stats_.notify_all();
         sim_.stop();
         close_fd(fd_);
         if (recv_thread_.joinable()) recv_thread_.join();
+        if (stats_thread_.joinable()) stats_thread_.join();
     }
 
     void broadcast(const EncodedFramePtr& frame) override {
@@ -130,6 +135,26 @@ private:
         emit(UdpHeader::kFecSeq, parity.data(), parity.size(), true);
     }
 
+    // 每秒下发服务端指标（PayloadType::StatsJson），供客户端面板展示
+    void stats_loop() {
+        while (running_) {
+            {
+                std::unique_lock<std::mutex> lk(stats_mtx_);
+                cv_stats_.wait_for(lk, std::chrono::milliseconds(1000), [this] { return !running_; });
+            }
+            if (!running_ || client_count() == 0) continue;
+            std::string payload = Metrics::instance().to_json();
+            if (payload.size() + UdpHeader::kSize > 65535) continue;
+            std::vector<uint8_t> pkt(UdpHeader::kSize + payload.size());
+            UdpHeader h;
+            h.payload_type = static_cast<uint8_t>(PayloadType::StatsJson);
+            h.payload_len = static_cast<uint16_t>(payload.size());
+            h.write(pkt.data());
+            std::memcpy(pkt.data() + UdpHeader::kSize, payload.data(), payload.size());
+            raw_send(pkt.data(), pkt.size());
+        }
+    }
+
     void recv_loop() {
         uint8_t buf[65536];
         while (running_) {
@@ -186,6 +211,9 @@ private:
     int fd_ = -1;
     std::atomic<bool> running_{false};
     std::thread recv_thread_;
+    std::thread stats_thread_;
+    std::mutex stats_mtx_;
+    std::condition_variable cv_stats_;
     mutable std::mutex clients_mtx_;
     std::vector<ClientAddr> clients_;
     std::mutex send_mtx_;
