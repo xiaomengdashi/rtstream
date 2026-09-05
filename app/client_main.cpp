@@ -12,6 +12,8 @@
 #include <thread>
 
 #include <cli11.hpp>
+// 注：CLI11 内部 std::wstring_convert 的弃用告警在 app CMake 目标上抑制
+//（模板实例化点在本文件内，包含处 pragma 无法覆盖）
 
 #include "common/logger.h"
 #include "common/thread_safe_queue.h"
