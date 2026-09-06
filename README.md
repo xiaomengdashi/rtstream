@@ -18,6 +18,7 @@ C++17 · CMake · Linux(V4L2) · macOS(AVFoundation) · FFmpeg(libavcodec/swscal
 │              ├──> UdpServer    (分片 + XOR FEC + NACK 重传)    │
 │              │        └─> LossSimulator (丢包/延迟/抖动注入)  │
 │              └──> RtpServer    (RFC 6184 FU-A + RTP seq NACK) │
+│                       └─> LossSimulator (弱网注入同 UDP)      │
 │                                                                │
 │  Web 监控: 采集帧 tap ──> JPEG ──> WebSocket + MJPEG ──┐       │
 └──────────────────────────────────────────────────────┼────────┘
@@ -141,7 +142,7 @@ build/app/rtstream_client --server 127.0.0.1 --transport rtp --headless
 
 ## 指标与弱网验证
 
-服务端每秒向 Web 面板推送指标 JSON（`src/stats/metrics.h` 聚合）：
+服务端每秒聚合指标（`src/stats/metrics.h`），同时向 **Web 监控面板**（WebSocket 推送）与 **桌面客户端**（UDP/RTP `StatsJson` 控制包、TCP 控制帧带内下发，实时刷新 ImGui 面板服务端统计）双向同步：
 
 | 指标 | 含义 |
 | --- | --- |
@@ -165,7 +166,10 @@ build/app/rtstream_client --server 127.0.0.1 --transport rtp --headless
 # RTP 链路：RFC6184 打包 + 包级 Jitter Buffer
 ./scripts/run_loopback.sh rtp 0.1
 # TCP 链路对照：无 FEC/NACK，观察队头阻塞下的延时上升
-build/app/rtstream_server --transport tcp && build/app/rtstream_client --transport tcp
+./scripts/run_loopback.sh tcp 0
+# 或分两个终端手动运行：
+#   终端 1: build/app/rtstream_server --source test --transport tcp
+#   终端 2: build/app/rtstream_client --server 127.0.0.1 --transport tcp
 ```
 
 浏览器面板中"端到端延时"由浏览器墙钟与服务端帧内嵌墙钟差值得出（同机回环可信）。
